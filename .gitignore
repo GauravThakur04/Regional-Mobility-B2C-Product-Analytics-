@@ -1,0 +1,16 @@
+# credentials and hashing salt — never commit
+.dbenv
+.dbenv_service
+.salt
+# extracted data and exports (customer-level / internal figures)
+data/
+outputs/
+outputs_source1/
+scan_green_card.log
+*.pkl
+*.xlsx
+*.csv
+# local environment
+venv/
+__pycache__/
+.DS_Store
