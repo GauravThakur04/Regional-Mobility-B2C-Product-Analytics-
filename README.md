@@ -54,7 +54,7 @@ python3 -c "import secrets; print(secrets.token_hex(16))" > .salt
 mkdir -p data
 ./venv/bin/python extract.py                                     # commuter DB → data/
 DBENV=.dbenv_service ./venv/bin/python extract_service.py        # card-service DB → data/
-./venv/bin/streamlit run app.py
+./run_local.sh                                                   # dashboard on http://localhost:8501 (this computer only)
 ```
 
 `extract.py` pulls the base commuter tables (`sql/01–03`). The dashboard also reads these extracts:

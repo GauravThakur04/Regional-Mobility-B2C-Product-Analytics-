@@ -7,7 +7,3 @@ textColor = "#0b0b0b"
 
 [browser]
 gatherUsageStats = false
-
-[server]
-# customer phone numbers are shown — serve to this computer only
-address = "localhost"
