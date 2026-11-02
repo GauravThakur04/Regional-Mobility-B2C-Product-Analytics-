@@ -3,7 +3,9 @@ Run:  streamlit run app.py
 Two data sources, picked in the sidebar:
   * Green Card passengers  — apnibus-service-db.service_app_servicebooking (card tapped on the conductor's machine), via card.py
   * App & website      — ab_commuter.ticket_ticketnew WHERE source = 1 AND is_paid (our buses), via paid.py
-Customer ids shown are anonymised (salted hash of the phone number); no phone numbers are loaded."""
+Customers are keyed by a salted hash of the phone number; the real phone is shown only in the Customer list
+(read from the git-ignored data/ folder). The server is bound to localhost (.streamlit/config.toml)."""
+import os
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -66,9 +68,16 @@ def explain(text):
     st.info(text, icon=":material/lightbulb:")
 
 
+SNAP = os.path.join(M.HERE, "snapshot")
+LOCAL = os.path.exists(os.path.join(M.DATA, "06_our_buses_paid.pkl"))   # full local extract; else the snapshot (cloud)
+
+
 @st.cache_data(show_spinner="Loading app & website bookings…")
 def load():
-    return P.build()
+    if LOCAL:
+        return P.build()
+    j = pd.read_parquet(os.path.join(SNAP, "journeys.parquet"))
+    return None, j
 
 
 @st.cache_data
@@ -85,11 +94,22 @@ def town_matrix(j):
 
 @st.cache_data(show_spinner="Loading Green Card taps…")
 def load_card():
-    return CD.build(), CD.customers()
+    if LOCAL:
+        return CD.build(), CD.customers()
+    cu = pd.read_parquet(os.path.join(SNAP, "card_customers.parquet"))
+    return pd.read_parquet(os.path.join(SNAP, "card_taps.parquet")), cu.assign(phone=pd.NA)
+
+
+@st.cache_data
+def load_phones():
+    if LOCAL:
+        return P.phones().rename(columns={"customer_key": "cid"})
+    return pd.DataFrame({"cid": pd.Series(dtype=str), "phone": pd.Series(dtype=str)})   # phones never leave this computer
 
 
 T, J = load()
 CT, CU = load_card()
+PH = load_phones()
 
 
 # ---------------------------------------------------------------- shared views (both data sources)
@@ -296,7 +316,7 @@ def customer_table(n, as_of, extra=None):
 
 def customers_header(note):
     st.subheader("Customer list — every passenger, their usual route and when they last travelled")
-    explain("One row per passenger (anonymised ID — no phone numbers here). **Status** shows how recently they travelled; "
+    explain("One row per passenger, with their **phone number** for follow-up. **Status** shows how recently they travelled; "
             "**rider type** shows how often. Use the filters to build a list (for example *lapsed regulars on one route*) "
             f"and download it. {note}")
 
@@ -328,8 +348,14 @@ def view_customers(per, key, cols):
     else:
         k[3].metric("Trips by these customers", f"{int(v.total_trips.sum()):,}")
     v = v.sort_values(["total_trips", "last_trip"], ascending=False, na_position="last")
+    if "phone" in cols and v.phone.isna().all():                      # online snapshot carries no phone numbers
+        cols = [x for x in cols if x != "phone"]
+        st.caption("Phone numbers are shown only in the local version of this dashboard.")
     st.dataframe(v[cols], width="stretch", hide_index=True, height=520)
-    download(v[cols], f"{key}_customers", f"Download this list ({len(v):,} customers, anonymised)")
+    download(v[cols], f"{key}_customers", f"Download this list ({len(v):,} customers"
+                                          f"{', with phone numbers' if 'phone' in cols else ''})")
+    st.caption("Phone numbers are personal data — use them only for service messages or for customers who agreed to "
+               "marketing, and don't share the file outside the team.")
 
     st.markdown("**Who is in the list**")
     a, b = st.columns(2)
@@ -569,7 +595,7 @@ in the conductor-machine system, not here.*
         view_buses(N, "cd", "Every card trip records the bus number.")
 
     with ctabs[3]:
-        prof = CU.rename(columns={"customer_key": "cid"})[["cid", "language", "wallet_balance", "signed_up",
+        prof = CU.rename(columns={"customer_key": "cid"})[["cid", "phone", "language", "wallet_balance", "signed_up",
                                                            "last_recharge"]]
         prof["language"] = prof.language.map({"en": "English", "hi": "Hindi", "pa": "Punjabi", "gu": "Gujarati"}) \
                                         .fillna(prof.language)
@@ -586,7 +612,7 @@ in the conductor-machine system, not here.*
             nv.insert(0, "customer_id", anon(nv.cid))
             nv["status"], nv["rider_type"], nv["total_trips"] = "Never travelled", "Never travelled", 0
             per_c = pd.concat([per_c, nv], ignore_index=True)
-        cols = ["customer_id", "status", "rider_type", "home_state", "usual_route", "trips_on_usual_route", "total_trips",
+        cols = ["customer_id", "phone", "status", "rider_type", "home_state", "usual_route", "trips_on_usual_route", "total_trips",
                 "routes_used", "all_routes", "usual_bus", "operator", "first_trip", "last_trip", "days_since_last_trip",
                 "months_active", "wallet_balance", "language", "signed_up", "last_recharge"]
         view_customers(per_c, "cd", cols)
@@ -599,7 +625,7 @@ in the conductor-machine system, not here.*
 | Term | What it means |
 |---|---|
 | **Green Card trip** | One tap of the prepaid card on the conductor's machine (one row of `service_app_servicebooking`). Deleted rows and test users removed. |
-| **Passenger / customer** | One person, identified by the phone number on their card account (or the card's chip id if no account). Shown only as an anonymised `C…` id. |
+| **Passenger / customer** | One person, identified by the phone number on their card account (or the card's chip id if no account). `C…` id = stable short id; **phone** shown in the Customer list (blank if the card has no account). |
 | **State** | Taken from the bus number plate (HP… = Himachal Pradesh, RJ… = Rajasthan). The card data has no state column. |
 | **Route** | The bus's whole route, first → last town, from `ota_service`. The passenger's own boarding/drop stop is in the conductor-machine system, not in this database. |
 | **Came back** | Took 2 or more card trips. **Regular rider** = travelled in 3+ different months. |
@@ -801,10 +827,11 @@ with tabs[3]:
 with tabs[4]:
     customers_header("Trips from Dec-2021 → May-2022 have no towns, so some passengers show *Town not recorded* as "
                      "their route.")
-    per_a = customer_table(NA, M.AS_OF)
+    per_a = customer_table(NA, M.AS_OF, PH)
     per_a.loc[per_a.usual_route == P.NO_TOWN, "usual_route"] = "Town not recorded"
-    cols = ["customer_id", "status", "rider_type", "home_state", "usual_route", "trips_on_usual_route", "total_trips",
-            "routes_used", "all_routes", "usual_bus", "first_trip", "last_trip", "days_since_last_trip", "months_active"]
+    cols = ["customer_id", "phone", "status", "rider_type", "home_state", "usual_route", "trips_on_usual_route",
+            "total_trips", "routes_used", "all_routes", "usual_bus", "first_trip", "last_trip", "days_since_last_trip",
+            "months_active"]
     view_customers(per_a, "ap", cols)
 
 with tabs[5]:
@@ -816,7 +843,7 @@ with tabs[6]:
 |---|---|
 | **Booking** | `ticket_ticketnew` where `source = 1` (our buses) and `is_paid = true`. Cancelled, deleted and test tickets removed. |
 | **Trip** | One person + one travel date + one route + one bus service. Duplicate tickets for the same trip are merged. |
-| **Passenger / customer** | One phone number, shown only as an anonymised `C…` id. |
+| **Passenger / customer** | One phone number. `C…` id = stable short id; the **phone** is shown in the Customer list. |
 | **Green Card pass** | The booking carries the Green Card `pass_id` (`pass_reward_id`, always b1f1ae25…) or `ticket_with_pass = true`. |
 | **Booked through** | `ticket_sourcing`: 1 = Website, 2 = App, 3 = Agent. Reliable only from 2024; older migrated tickets all show App. |
 | **Towns / route** | From the ticket; for 2022–24 migrated tickets from the old `ticket_ticket` table (same PNR **and** same customer). Dec-2021 → May-2022 tickets have no towns. |

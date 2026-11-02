@@ -34,5 +34,6 @@ def build():
 
 
 def customers():
-    """Registered card users (incl. never tapped): language, wallet balance, sign-up. Keyed by the hashed mobile."""
-    return pd.read_pickle(os.path.join(M.DATA, "24_card_customers.pkl"))
+    """Registered card users (incl. never tapped): language, wallet balance, sign-up, phone. Keyed by the hashed mobile."""
+    u = pd.read_pickle(os.path.join(M.DATA, "24_card_customers.pkl"))
+    return u.merge(pd.read_pickle(os.path.join(M.DATA, "26_card_customer_phones.pkl")), on="customer_key", how="left")

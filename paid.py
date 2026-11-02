@@ -60,6 +60,11 @@ def build_tickets():
     return t
 
 
+def phones():
+    """customer_key → phone for app & website customers (local data/ only)."""
+    return pd.read_pickle(os.path.join(M.DATA, "25_app_customer_phones.pkl"))
+
+
 def build():
     t = build_tickets()
     j = M.build_journeys(t)

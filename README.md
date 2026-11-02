@@ -28,9 +28,21 @@ The sidebar switches between two groups. Each comes from its own read-only Postg
 
 ## Privacy
 
-- **Anonymised IDs:** every passenger is identified by a salted hash of their phone number, shown as `C…` IDs. Phone numbers are never loaded into the dashboard or its downloads.
+- **Passenger IDs:** every passenger is keyed by a salted hash of their phone number, shown as `C…` IDs.
+- **Phone numbers stay on the analyst's computer.** The local dashboard shows them in the Customer list, reading them from the git-ignored `data/` folder, and it only serves to `localhost`. They are never committed and never included in the online snapshot.
 - **Read-only access:** the databases are opened read-only (`default_transaction_read_only=on`).
 - **Kept out of git:** credentials (`.dbenv*`), the hashing salt (`.salt`), extracted data (`data/`) and exports.
+
+## Online version (Streamlit Cloud)
+
+The app runs from `snapshot/` when `data/` isn't there. `snapshot/` holds three Parquet files of finished tables: no phone numbers, and no raw stop names.
+
+To refresh it:
+1. Re-extract `data/`.
+2. Run `./venv/bin/python make_snapshot.py`. It refuses to write a file if any value looks like a phone number.
+3. Commit and push.
+
+Keep this repo **private**, and keep the Streamlit app's sharing set to specific people.
 
 ## Setup
 
@@ -63,6 +75,7 @@ Each is produced from the matching file in `sql/`, using `db.q(sql, {"salt": sal
 | `db.py` | Read-only connection helper (`DBENV` selects the credentials file). |
 | `sql/` | Every query used, with comments. |
 | `extract.py`, `extract_service.py` | Pull query results into `data/`. |
+| `make_snapshot.py` | Builds `snapshot/` for the online app (no phone numbers). |
 | `apptest_filters.py` | End-to-end test of every filter and control (Streamlit AppTest). |
 | `DATA_DICTIONARY.md` | Field definitions. |
 | `analysis*.py`, `app_all_b2c.py`, `app_our_buses_full.py`, `our_buses.py` | Earlier analysis scripts and dashboard versions. |
